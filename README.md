@@ -146,7 +146,7 @@ Mocks are saved as a simple json object and can be updated manually. This is **n
 
 ```js
 it('should display an error message when send message fails', function () {
-    cy.route({
+    cy.intercept({
         url: '/message',
         method: 'POST',
         status: 404,

@@ -80,42 +80,6 @@ module.exports = function autoRecord() {
         // Reset routes before each test case
         routes = [];
 
-        cy.server({
-            // Filter out blacklisted routes from being recorded and logged
-            ignore: (xhr) => {
-                if (xhr.url) {
-                    // TODO: Use blobs
-                    return blacklistRoutes.some((route) => xhr.url.includes(route));
-                }
-            },
-            // Here we handle all requests passing through Cypress' server
-            onResponse: (response) => {
-                const url = response.url;
-                const status = response.status;
-                const method = response.method;
-                const data = response.response.body;
-                const body = response.request.body;
-                const headers = Object.entries(response.response.headers)
-                    .filter(([key]) => whitelistHeaderRegexes.some((regex) => regex.test(key)))
-                    .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
-
-                // We push a new entry into the routes array
-                // Do not rerecord duplicate requests
-                if (
-                    !routes.some(
-                        (route) =>
-                            route.url === url && route.body === body && route.method === method
-                    )
-                ) {
-                    routes.push({ url, method, status, data, body, headers });
-                }
-            },
-            // Disable all routes that are not mocked
-            force404: true,
-        });
-
-        // check to see if test is being force recorded
-        // TODO: change this to regex so it only reads from the beginning of the string
         isTestForceRecord = this.currentTest.title.includes('[r]');
 
         this.currentTest.title = isTestForceRecord
@@ -142,10 +106,6 @@ module.exports = function autoRecord() {
                 sortedRoutes[method] = {};
             });
 
-            cy.server({
-                force404: true,
-            });
-
             routesByTestId[this.currentTest.title].forEach((request) => {
                 if (!sortedRoutes[request.method][request.url]) {
                     sortedRoutes[request.method][request.url] = [];
@@ -157,19 +117,15 @@ module.exports = function autoRecord() {
             const onResponse = (method, url, index) => {
                 if (sortedRoutes[method][url].length > index) {
                     const response = sortedRoutes[method][url][index];
-                    cy.route({
-                        method: response.method,
-                        url: url,
-                        status: response.status,
-                        headers: response.headers,
-                        response: response.fixtureId
-                            ? `fixture:${response.fixtureId}.json`
-                            : response.response,
-                        // This handles requests from the same url but with different request bodies
-                        // Tip: this causes errors with tests ( this and cy.visit in beforeEach)
-                        // If same request but different body is needed in one test, then this should be fixed here.
-                        // onResponse: () => onResponse(method, url, index + 1),
-                    });
+
+                    cy.intercept(
+                        { url },
+                        {
+                            ...(response.fixtureId
+                                ? { fixture: `${response.fixtureId}.json` }
+                                : { body: request.response || 'adsadas' }),
+                        }
+                    );
                 }
             };
 
@@ -178,14 +134,38 @@ module.exports = function autoRecord() {
                 Object.keys(sortedRoutes[method]).forEach((url) => onResponse(method, url, 0));
             });
         } else {
-            // Allow all routes to go through
-            cy.server({ force404: false });
+            cy.intercept('*', (req) => {
+                if (req.url) {
+                    const ignore = blacklistRoutes.some((route) => req.url.includes(route));
+                    if (ignore) {
+                        req.reply();
+                        return;
+                    }
+                }
 
-            // This tells Cypress to hook into all types of requests
-            supportedMethods.forEach((method) => {
-                cy.route({
-                    method,
-                    url: '*',
+                // send the request to the destination server, and intercept the response
+                req.continue((res) => {
+                    const url = res.url;
+                    const status = res.status;
+                    const method = res.method;
+                    const data = res.body;
+                    const body = req.body;
+                    const headers = Object.entries(res.headers)
+                        .filter(([key]) => whitelistHeaderRegexes.some((regex) => regex.test(key)))
+                        .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
+
+                    // We push a new entry into the routes array
+                    // Do not rerecord duplicate requests
+                    if (
+                        !routes.some(
+                            (route) =>
+                                route.url === url && route.body === body && route.method === method
+                        )
+                    ) {
+                        routes.push({ url, method, status, data, body, headers });
+                    }
+
+                    return res;
                 });
             });
         }
