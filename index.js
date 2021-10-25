@@ -51,6 +51,23 @@ function getParentsName(test) {
     return;
 }
 
+function isFixtureUsedInOtherTest(routesByTestId, route, currentTitle) {
+    const keyAsProp = Object.entries(routesByTestId).map(([key, values]) =>
+        values.map((value) => ({ key, ...value }))
+    );
+
+    const sameRouteWithThisFixtureId = keyAsProp.find((internalRoutes) =>
+        internalRoutes.find(
+            (internalRoute) =>
+                internalRoute.key !== currentTitle && internalRoute.fixtureId === route.fixtureId
+        )
+    );
+
+    if (sameRouteWithThisFixtureId) {
+        return sameRouteWithThisFixtureId[0];
+    }
+}
+
 module.exports = function autoRecord() {
     const whitelistHeaderRegexes = whitelistHeaders.map((str) => RegExp(str));
 
@@ -237,8 +254,23 @@ module.exports = function autoRecord() {
             if (routesByTestId[this.currentTest.title]) {
                 routesByTestId[this.currentTest.title].forEach((route) => {
                     // If fixtureId exist, delete the json
+
                     if (route.fixtureId) {
-                        removeFixture.push(path.join(fixturesFolder, `${route.fixtureId}.json`));
+                        const sameRouteWithThisFixtureId = isFixtureUsedInOtherTest(
+                            routesByTestId,
+                            route,
+                            this.currentTest.title
+                        );
+
+                        if (!sameRouteWithThisFixtureId) {
+                            removeFixture.push(
+                                path.join(fixturesFolder, `${route.fixtureId}.json`)
+                            );
+                        } else {
+                            console.warn(
+                                `${route.fixtureId} is used in "${sameRouteWithThisFixtureId.key}", not deleting`
+                            );
+                        }
                     }
                 });
             }
