@@ -151,7 +151,6 @@ module.exports = function autoRecord() {
             cy.intercept(interceptPattern, {
                 statusCode: 408,
                 body: 'cypress-autorecord forced 408 Request Timeout',
-                delay: 5000,
             }).as('autorecordForced408');
 
             // Avoid timed out requests to fail test
