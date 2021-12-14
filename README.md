@@ -104,11 +104,34 @@ Stale mocks that are no longer being used can be automatically removed when you 
 
 **_NOTE: Only mocks that are used during the run are considered "active". Make sure to only set `cleanMocks` to `true` when you are running ALL your tests. Remove any unintentional `.only` or `.skip`._**
 
+## Set Recording Pattern For Cypress Intercept
+
+By default autorecorder is recording all outgoing requests but if you want to record only specific calls based on pattern(Ex. just record api calls on backend), you can set `interceptPattern` in `cypress.json`. it can be string, regex or glob
+
+```json
+{
+    "autorecord": {
+        "interceptPattern": "**/api/**"
+    }
+}
+```
+
+## Ignoring Request Body Attributes
+
+If a request includes body, then it will compared with the recorded request body to match with. If you want to exclude body attributes from the comparison, you can set `ignoredRequestBodyAttributes` in `cypress.json`.
+
+```json
+{
+    "autorecord": {
+        "ignoredRequestBodyAttributes": ["token"]
+    }
+}
+```
+
 ## How It Works
 
 ### How does the recording and stubbing work?
-
-Cypress Autorecord uses Cypress' built-in `cy.server` to hook into every request, including GET, POST, DELETE and PUT. If mocks doesn't exist for a test, the http calls (requests and responses) are captured and automatically written to a local file. If mocks exist for a test, each http call will be stubbed by using `cy.route` in the `beforeEach` hook.
+Cypress Autorecord uses Cypress' built-in `cy.intercept` to hook into every request, including GET, POST, DELETE and PUT. If no mocks exist for a test, the network requests and responses are captured and automatically written to a local file. If mocks exist for a test, each request response will be stubbed in the `beforeEach` hook.
 
 ### Where are the mocks saved?
 
@@ -167,12 +190,6 @@ it('should display an error message when send message fails', function () {
 #### Uncaught CypressError appears for certain requests
 
 You should only ever see this error when you have a test that calls the same url but expect different response bodies based on different request bodies. The error message will show up when your test fails but **this error does not effect your mocks or tests in any way and is not causing your test to fail!** If you are curious to know a little bit more, take a look [here](https://github.com/Nanciee/cypress-autorecord/issues/5#issuecomment-508616149).
-
-#### Only XMLHttpRequests will be recorded and stubbed
-
-Cypress-autorecord leverages Cypress' built in `cy.route` to handle stubbing, which means that it inherits some limitations as well. This is the disclaimer on the `cy.route` documentation page with some potential workarounds:
-
-> Please be aware that Cypress only currently supports intercepting XMLHttpRequests. Requests using the Fetch API and other types of network requests like page loads and <script> tags will not be intercepted or visible in the Command Log. See [#95](https://github.com/cypress-io/cypress/issues/95) for more details and temporary workarounds.
 
 ## Contributions
 
