@@ -149,11 +149,12 @@ module.exports = function autoRecord() {
 
             // Force unrecognized requests to timeout (e.g. canceled or new requests)
             cy.intercept(interceptPattern, {
-                headers: { accept: 'application/json' },
                 statusCode: 408,
                 body: 'cypress-autorecord forced 408 Request Timeout',
+                delay: 5000,
             }).as('autorecordForced408');
 
+            // Avoid timed out requests to fail test
             Cypress.on('uncaught:exception', (err) => {
                 if (/request failed with status code 408/i.test(err.message)) {
                     return false;
