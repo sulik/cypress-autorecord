@@ -6,6 +6,7 @@ const stringify = require('json-stringify-pretty-compact');
 const filenamify = require('filenamify');
 const urlParse = require('url-parse');
 const objectHash = require('object-hash');
+const isEqualWith = require('lodash.isequalwith');
 
 const guidGenerator = util.guidGenerator;
 const sizeInMbytes = util.sizeInMbytes;
@@ -16,8 +17,16 @@ const includeParentTestName = cypressConfig.includeParentTestName || true;
 const seperateMockFiles = cypressConfig.seperateMockFiles || false;
 const isForceRecord = cypressConfig.forceRecord || false;
 const recordTests = cypressConfig.recordTests || [];
+
+let interceptPattern = cypressConfig.interceptPattern || '*';
+const interceptPatternFragments = interceptPattern.match(/\/(.*?)\/([a-z]*)?$/i);
+if (interceptPatternFragments) {
+    interceptPattern = new RegExp(interceptPatternFragments[1], interceptPatternFragments[2] || '');
+}
+
 const blacklistRoutes = cypressConfig.blacklistRoutes || [];
 const whitelistHeaders = cypressConfig.whitelistHeaders || [];
+const ignoredRequestBodyAttributes = cypressConfig.ignoredRequestBodyAttributes || [];
 const supportedMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'];
 
 const fileName = path.basename(Cypress.spec.name, path.extname(Cypress.spec.name));
@@ -68,6 +77,13 @@ function isFixtureUsedInOtherTest(routesByTestId, route, currentTitle) {
     }
 }
 
+function requestBodyComparator(reqValue, mockValue, key) {
+    if (ignoredRequestBodyAttributes.includes(key)) {
+        return true;
+    }
+    return undefined;
+}
+
 module.exports = function autoRecord() {
     const whitelistHeaderRegexes = whitelistHeaders.map((str) => RegExp(str));
 
@@ -102,8 +118,8 @@ module.exports = function autoRecord() {
         this.currentTest.title = isTestForceRecord
             ? this.currentTest.title.replace('[r]', '')
             : this.currentTest.title;
-        // let's add parent test to test name
 
+        // let's add parent test to test name
         if (includeParentTestName) {
             this.currentTest.title = `${getParentsName(this.currentTest)}${this.currentTest.title}`;
         }
@@ -131,41 +147,67 @@ module.exports = function autoRecord() {
                 sortedRoutes[request.method][request.url].push(request);
             });
 
-            const onResponse = (method, url, index) => {
-                if (sortedRoutes[method][url].length > index) {
-                    const response = sortedRoutes[method][url][index];
+            // Force unrecognized requests to timeout (e.g. canceled or new requests)
+            cy.intercept(interceptPattern, {
+                headers: { accept: 'application/json' },
+                statusCode: 408,
+                body: 'cypress-autorecord forced 408 Request Timeout',
+            }).as('autorecordForced408');
 
-                    cy.intercept(
-                        { url },
-                        {
-                            ...(response.fixtureId
-                                ? { fixture: `${response.fixtureId}.json` }
-                                : { body: request.response || 'adsadas' }),
-                        }
-                    );
+            Cypress.on('uncaught:exception', (err) => {
+                if (/request failed with status code 408/i.test(err.message)) {
+                    return false;
+                }
+            });
+
+            const createStubbedRoute = (method, url, index) => {
+                const mock = sortedRoutes[method][url][index];
+
+                cy.intercept(method, url, (req) => {
+                    if (
+                        (!req.body && !mock.body) ||
+                        isEqualWith(req.body, mock.body, requestBodyComparator)
+                    ) {
+                        req.reply((res) => {
+                            res.send({
+                                statusCode: mock.status,
+                                headers: mock.headers,
+                                ...(mock.fixtureId
+                                    ? { fixture: `${mock.fixtureId}.json` }
+                                    : { body: mock.response }),
+                            });
+                        });
+                    }
+                }).as('autorecordStub');
+
+                if (sortedRoutes[method][url].length > index + 1) {
+                    createStubbedRoute(method, url, index + 1);
                 }
             };
 
             // Stub all recorded routes
             Object.keys(sortedRoutes).forEach((method) => {
-                Object.keys(sortedRoutes[method]).forEach((url) => onResponse(method, url, 0));
+                Object.keys(sortedRoutes[method]).forEach((url) =>
+                    createStubbedRoute(method, url, 0)
+                );
             });
         } else {
-            cy.intercept('*', (req) => {
-                if (req.url) {
-                    const ignore = blacklistRoutes.some((route) => req.url.includes(route));
-                    if (ignore) {
-                        req.reply();
-                        return;
-                    }
+            cy.intercept(interceptPattern, (req) => {
+                // This is cypress loading the page
+                if (Object.keys(req.headers).some((k) => k === 'x-cypress-authorization')) {
+                    return;
                 }
 
-                // send the request to the destination server, and intercept the response
-                req.continue((res) => {
-                    const url = res.url;
-                    const status = res.status;
-                    const method = res.method;
-                    const data = res.body;
+                if (blacklistRoutes.some((route) => req.url.includes(route))) {
+                    return;
+                }
+
+                req.on('response', (res) => {
+                    const url = req.url;
+                    const status = res.statusCode;
+                    const method = req.method;
+                    const data =
+                        res.body.constructor.name === 'Blob' ? blobToPlain(res.body) : res.body;
                     const body = req.body;
                     const headers = Object.entries(res.headers)
                         .filter(([key]) => whitelistHeaderRegexes.some((regex) => regex.test(key)))
@@ -181,10 +223,8 @@ module.exports = function autoRecord() {
                     ) {
                         routes.push({ url, method, status, data, body, headers });
                     }
-
-                    return res;
                 });
-            });
+            }).as('autorecord');
         }
 
         // Store test name if isCleanMocks is true
