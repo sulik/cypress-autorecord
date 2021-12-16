@@ -36,7 +36,16 @@ const guidGenerator = () => {
     return S4() + S4() + S4() + S4() + S4() + S4() + S4() + S4();
 };
 
+function tryToParseJSON(value) {
+    try {
+        return JSON.parse(value);
+    } catch (e) {
+        return value;
+    }
+}
+
 module.exports = {
     sizeInMbytes,
     guidGenerator,
+    tryToParseJSON,
 };
