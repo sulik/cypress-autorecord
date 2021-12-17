@@ -63,9 +63,9 @@ function getParentsName(test) {
     return '';
 }
 
-function isFixtureUsedInOtherTest(routesByTestId, route, currentTitle) {
-    const keyAsProp = Object.entries(routesByTestId).map(([key, values]) =>
-        values.map((value) => ({ key, ...value }))
+function isFixtureUsedInOtherTest(fixturesByTestId, route, currentTitle) {
+    const keyAsProp = Object.entries(fixturesByTestId).map(([key, values]) =>
+        values.map((value) => ({ key, fixtureId: value }))
     );
 
     const sameRouteWithThisFixtureId = keyAsProp.find((internalRoutes) =>
@@ -98,6 +98,33 @@ function isRequestBodyEqual(current, mock) {
     return isEqualWith(currentReqBody, mock, requestBodyComparator);
 }
 
+function getAllSpecsFixturesByTestId(routesByTestId) {
+    const response = {};
+
+    function pushFixturesByTestId(data) {
+        Object.entries(data).forEach(([testId, mocks]) => {
+            if (!response[testId]) {
+                response[testId] = [];
+            }
+            response[testId].push(...mocks.map((mock) => mock.fixtureId));
+        });
+    }
+
+    pushFixturesByTestId(routesByTestId);
+
+    cy.task('readdir', mocksFolder).then((files) => {
+        files.forEach((file) => {
+            if (file !== `${fileName}.json`) {
+                cy.task('readFile', path.join(mocksFolder, file)).then((data) => {
+                    pushFixturesByTestId(data);
+                });
+            }
+        });
+    });
+
+    return response;
+}
+
 module.exports = function autoRecord() {
     const whitelistHeaderRegexes = whitelistHeaders.map((str) => RegExp(str));
 
@@ -107,6 +134,8 @@ module.exports = function autoRecord() {
     let cleanMockData = {};
     // Locally stores all mock data for this spec file
     let routesByTestId = {};
+    // Locally stores all specs fixtures by id's
+    let allSpecsFixturesByTestId = {};
     // For recording, stores data recorded from hitting the real endpoints
     let routes = [];
     // Stores any fixtures that need to be added
@@ -128,17 +157,19 @@ module.exports = function autoRecord() {
     beforeEach(function () {
         // Reset routes before each test case
         routes = [];
-
-        isTestForceRecord = this.currentTest.title.includes('[r]');
         isTestRetry = this.currentTest.prevAttempts?.length > 0;
 
-        if (isTestForceRecord) {
-            this.currentTest.title = this.currentTest.title.replace('[r]', '');
+        if (!isTestRetry && includeParentTestName) {
+            this.currentTest.title = `${getParentsName(this.currentTest)}${this.currentTest.title}`;
+        }
+        if (!isTestRetry) {
+            isTestForceRecord = this.currentTest.title.includes('[r]');
+        }
+        if (!isTestRetry && isTestForceRecord) {
+            this.currentTest.title = this.currentTest.title.replaceAll('[r]', '');
         }
         if (isTestRetry) {
             this.currentTest.title = this.currentTest.prevAttempts[0].title;
-        } else if (includeParentTestName) {
-            this.currentTest.title = `${getParentsName(this.currentTest)}${this.currentTest.title}`;
         }
 
         // Load stubbed data from local JSON file
@@ -204,7 +235,6 @@ module.exports = function autoRecord() {
                 if (Object.keys(req.headers).some((k) => k === 'x-cypress-authorization')) {
                     return;
                 }
-
                 if (blacklistRoutes.some((route) => req.url.includes(route))) {
                     return;
                 }
@@ -300,12 +330,16 @@ module.exports = function autoRecord() {
 
             // Delete fixtures if we are overwriting mock data
             if (routesByTestId[this.currentTest.title]) {
+                if (Object.keys(allSpecsFixturesByTestId).length === 0) {
+                    allSpecsFixturesByTestId = getAllSpecsFixturesByTestId(routesByTestId);
+                }
+
                 routesByTestId[this.currentTest.title].forEach((route) => {
                     // If fixtureId exist, delete the json
 
                     if (route.fixtureId) {
                         const sameRouteWithThisFixtureId = isFixtureUsedInOtherTest(
-                            routesByTestId,
+                            allSpecsFixturesByTestId,
                             route,
                             this.currentTest.title
                         );

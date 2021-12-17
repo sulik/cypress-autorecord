@@ -13,6 +13,14 @@ module.exports = (on, config, fs) => {
         return null;
     };
 
+    const readdir = (folderPath) => {
+        if (fs.existsSync(folderPath)) {
+            return fs.readdirSync(folderPath);
+        }
+
+        return [];
+    };
+
     const deleteFile = (filePath) => {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -64,6 +72,7 @@ module.exports = (on, config, fs) => {
 
     on('task', {
         readFile,
+        readdir,
         deleteFile,
         cleanMocks,
         removeAllMocks,
