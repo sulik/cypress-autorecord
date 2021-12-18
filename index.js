@@ -93,11 +93,7 @@ function isRequestBodyEqual(current, mock) {
     if (!current || !mock) {
         return true;
     }
-
-    const currentReqBody =
-        typeof mock === 'object' && typeof current === 'string' ? tryToParseJSON(current) : current;
-
-    return isEqualWith(currentReqBody, mock, requestBodyComparator);
+    return isEqualWith(tryToParseJSON(current), tryToParseJSON(mock), requestBodyComparator);
 }
 
 function getAllSpecsFixturesByTestId(routesByTestId) {
@@ -215,13 +211,13 @@ module.exports = function autoRecord() {
                 });
 
                 if (isDebug) {
-                    log.push({ msg: `\nRequest: ${req.method} ${req.url}` });
+                    log.push({ msg: `\nRequest: ${req.method} ${req.url}`, level: 'data' });
                     if (mock) {
                         log.push({ msg: `Mock: ${prettyObject(mock)}`, level: 'info' });
                     }
                     if (!mock) {
                         log.push({
-                            msg: 'No mock found matching this method and url.',
+                            msg: 'No mock found matching this request method, url and body.',
                             level: 'warn',
                         });
                     }
@@ -229,7 +225,7 @@ module.exports = function autoRecord() {
                         log.push({
                             msg: [
                                 `Request body: ${prettyObject(req.body)}`,
-                                `Mocks with matching url: ${mocksByUrl.map((m) =>
+                                `Mocks with matching request method and url: ${mocksByUrl.map((m) =>
                                     prettyObject(m)
                                 )}`,
                             ].join('\n'),
