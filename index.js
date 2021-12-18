@@ -11,6 +11,7 @@ const isEqualWith = require('lodash.isequalwith');
 const guidGenerator = util.guidGenerator;
 const sizeInMbytes = util.sizeInMbytes;
 const tryToParseJSON = util.tryToParseJSON;
+const prettyObject = util.prettyObject;
 
 const cypressConfig = Cypress.config('autorecord') || {};
 const isCleanMocks = cypressConfig.cleanMocks || false;
@@ -22,6 +23,7 @@ const blacklistRoutes = cypressConfig.blacklistRoutes || [];
 const whitelistHeaders = cypressConfig.whitelistHeaders || [];
 const ignoredRequestBodyAttributes = cypressConfig.ignoredRequestBodyAttributes || [];
 const stringifyOptions = cypressConfig.stringifyOptions || {};
+const isDebug = cypressConfig.debug || false;
 
 let interceptPattern = cypressConfig.interceptPattern || '*';
 const interceptPatternFragments = interceptPattern.match(/\/(.*?)\/([a-z]*)?$/i);
@@ -146,6 +148,8 @@ module.exports = function autoRecord() {
     let isTestForceRecord = false;
     // Are there any failed test attempts on this run
     let isTestRetry = false;
+    // For debugging purposes
+    let log = [];
 
     before(function () {
         // Get mock data that relates to this spec file
@@ -157,6 +161,7 @@ module.exports = function autoRecord() {
     beforeEach(function () {
         // Reset routes before each test case
         routes = [];
+        log = [];
         isTestRetry = this.currentTest.prevAttempts?.length > 0;
 
         if (!isTestRetry && includeParentTestName) {
@@ -206,11 +211,32 @@ module.exports = function autoRecord() {
                 const mocksByUrl = sortedRoutes[req.method][req.url] || [];
 
                 const mock = mocksByUrl.find((mockByUrl) => {
-                    if (!mockByUrl) {
-                        return false;
-                    }
-                    return isRequestBodyEqual(req.body, mockByUrl.body);
+                    return isRequestBodyEqual(req.body, mockByUrl?.body);
                 });
+
+                if (isDebug) {
+                    log.push({ msg: `\nRequest: ${req.method} ${req.url}` });
+                    if (mock) {
+                        log.push({ msg: `Mock: ${prettyObject(mock)}`, level: 'info' });
+                    }
+                    if (!mock) {
+                        log.push({
+                            msg: 'No mock found matching this method and url.',
+                            level: 'warn',
+                        });
+                    }
+                    if (!mock && mocksByUrl.length > 0) {
+                        log.push({
+                            msg: [
+                                `Request body: ${prettyObject(req.body)}`,
+                                `Mocks with matching url: ${mocksByUrl.map((m) =>
+                                    prettyObject(m)
+                                )}`,
+                            ].join('\n'),
+                            level: 'warn',
+                        });
+                    }
+                }
 
                 if (mock) {
                     return req.reply({
@@ -271,6 +297,10 @@ module.exports = function autoRecord() {
     });
 
     afterEach(function () {
+        log.forEach((params) => {
+            cy.task('log', params);
+        });
+
         // Check to see if the current test already has mock data or if forceRecord is on
         if (
             (!routesByTestId[this.currentTest.title] ||

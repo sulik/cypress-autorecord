@@ -44,8 +44,13 @@ function tryToParseJSON(value) {
     }
 }
 
+function prettyObject(value) {
+    return JSON.stringify(value, null, 4);
+}
+
 module.exports = {
     sizeInMbytes,
     guidGenerator,
     tryToParseJSON,
+    prettyObject,
 };

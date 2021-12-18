@@ -1,4 +1,14 @@
 const path = require('path');
+const colors = require('colors/safe');
+
+colors.setTheme({
+    info: ['green'],
+    warn: ['yellow'],
+    error: ['red'],
+    data: ['grey'],
+    log: ['blue', 'dim'],
+    default: [],
+});
 
 module.exports = (on, config, fs) => {
     // `on` is used to hook into various events Cypress emits
@@ -70,11 +80,22 @@ module.exports = (on, config, fs) => {
         return null;
     };
 
+    const log = ({ msg, level, params = [] }) => {
+        const prefix = colors.log('[autorecord] ');
+        const message = `${prefix}${msg}`.split('\n').join(`\n${prefix}`);
+        const color = level || 'default';
+
+        console.info(colors[color](message), ...params);
+
+        return null;
+    };
+
     on('task', {
         readFile,
         readdir,
         deleteFile,
         cleanMocks,
         removeAllMocks,
+        log,
     });
 };
