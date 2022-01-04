@@ -1,6 +1,6 @@
 {
     "name": "@websulik/cypress-autorecord-sulik",
-    "version": "2.0.3",
+    "version": "2.0.4",
     "description": "It simplifies mocking by auto-recording/stubbing HTTP interactions and automate the process of updating/deleting recordings.",
     "main": "index.js",
     "types": "index.d.ts",
