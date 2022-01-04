@@ -286,6 +286,10 @@ module.exports = function autoRecord() {
                     }
                 });
             }).as('autorecord');
+
+            if (!shouldWriteMocks) {
+                shouldWriteMocks = true;
+            }
         }
 
         // Store test name if isCleanMocks is true
@@ -387,7 +391,6 @@ module.exports = function autoRecord() {
 
             // Store the endpoint for this test in the mock data object for this file if there are endpoints for this test
             if (endpoints.length > 0) {
-                shouldWriteMocks = true;
                 routesByTestId[this.currentTest.title] = endpoints;
             }
         }
