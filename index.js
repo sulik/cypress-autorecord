@@ -144,6 +144,8 @@ module.exports = function autoRecord() {
     let isTestForceRecord = false;
     // Are there any failed test attempts on this run
     let isTestRetry = false;
+    // Write mock and fixture files to disk
+    let shouldWriteMocks = false;
     // For debugging purposes
     let log = [];
 
@@ -385,6 +387,7 @@ module.exports = function autoRecord() {
 
             // Store the endpoint for this test in the mock data object for this file if there are endpoints for this test
             if (endpoints.length > 0) {
+                shouldWriteMocks = true;
                 routesByTestId[this.currentTest.title] = endpoints;
             }
         }
@@ -409,17 +412,22 @@ module.exports = function autoRecord() {
             });
         }
 
-        removeFixture.forEach((fixtureName) => cy.task('deleteFile', fixtureName));
+        if (isCleanMocks || shouldWriteMocks) {
+            const data = isCleanMocks ? cleanMockData : routesByTestId;
 
-        const data = isCleanMocks ? cleanMockData : routesByTestId;
+            removeFixture.forEach((fixtureName) => {
+                cy.task('deleteFile', fixtureName);
+            });
 
-        cy.writeFile(
-            path.join(mocksFolder, `${fileName}.json`),
-            stringify(data, stringifyOptions)
-            // prettier.format(JSON.stringify(data), { parser: 'html', plugins: [prettierReact] })
-        );
-        Object.keys(addFixture).forEach((fixtureName) => {
-            cy.writeFile(fixtureName, addFixture[fixtureName]);
-        });
+            cy.writeFile(
+                path.join(mocksFolder, `${fileName}.json`),
+                stringify(data, stringifyOptions)
+                // prettier.format(JSON.stringify(data), { parser: 'html', plugins: [prettierReact] })
+            );
+
+            Object.keys(addFixture).forEach((fixtureName) => {
+                cy.writeFile(fixtureName, addFixture[fixtureName]);
+            });
+        }
     });
 };
